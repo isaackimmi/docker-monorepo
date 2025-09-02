@@ -1,0 +1,99 @@
+version: "3.9"
+
+name: docker-monorepo
+
+x-env-common: &env_common
+  NODE_ENV: production
+
+networks:
+  appnet:
+    driver: bridge
+
+# ---------------------- PROD (2x FE, 2x BE, one Nginx) ----------------------
+services:
+  frontend-1:
+    profiles: ["prod"]
+    build: ./frontend
+    environment:
+      <<: *env_common
+      INSTANCE_NAME: frontend-1
+    networks: [appnet]
+
+  frontend-2:
+    profiles: ["prod"]
+    build: ./frontend
+    environment:
+      <<: *env_common
+      INSTANCE_NAME: frontend-2
+    networks: [appnet]
+
+  backend-1:
+    profiles: ["prod"]
+    build: ./backend
+    environment:
+      <<: *env_common
+      PORT: 3001
+      INSTANCE_NAME: backend-1
+    networks: [appnet]
+
+  backend-2:
+    profiles: ["prod"]
+    build: ./backend
+    environment:
+      <<: *env_common
+      PORT: 3001
+      INSTANCE_NAME: backend-2
+    networks: [appnet]
+
+  edge:
+    profiles: ["prod"]
+    image: nginx:1.27-alpine
+    depends_on: [frontend-1, frontend-2, backend-1, backend-2]
+    volumes:
+      - ./edge/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "3000:3000"
+    networks: [appnet]
+
+  # ---------------------- DEV (1x FE, 1x BE, one Nginx) ----------------------
+  fe-dev:
+    profiles: ["dev"]
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      NODE_ENV: development
+      INSTANCE_NAME: fe-dev
+      NEXT_PUBLIC_API_BASE: "" # use relative /api in frontend
+    command: sh -c "npm ci || npm i && npm run dev"
+    volumes:
+      - ./frontend:/app
+      - fe_dev_node_modules:/app/node_modules
+    networks: [appnet]
+
+  be-dev:
+    profiles: ["dev"]
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      INSTANCE_NAME: be-dev
+    command: sh -c "npm ci || npm i && npm run dev"
+    volumes:
+      - ./backend:/app
+      - be_dev_node_modules:/app/node_modules
+    networks: [appnet]
+
+  edge-dev:
+    profiles: ["dev"]
+    image: nginx:1.27-alpine
+    depends_on: [fe-dev, be-dev]
+    volumes:
+      - ./edge/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "3000:3000"
+    networks: [appnet]
+
+volumes:
+  fe_dev_node_modules:
+  be_dev_node_modules:
